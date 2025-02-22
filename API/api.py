@@ -12,19 +12,19 @@ from typing import Set
 import modeluse
 import pyaudio
 from fastapi.staticfiles import StaticFiles
-import redis
 
-L=[]
+app = FastAPI()
+
+# Mount the static folder
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
-active_websockets: Set[WebSocket] = set()
 
-# Mount the static folder for serving images and CSS
-app.mount("/static", StaticFiles(directory="static"), name="static")
+active_websockets: Set[WebSocket] = set()
 
 class TranscriberWithAI:
     def __init__(self, model_path='model.pkl'):
@@ -32,10 +32,8 @@ class TranscriberWithAI:
         self.is_running = False
         self.audio_queue = queue.Queue()
         import modeluse
-        model=None
         # Load AI model
         self.model = modeluse.load_model_with_custom_layer("mymodel.h5")
-
         '''try:
             #with open(model_path, 'rb') as f:
                 self.model = pickle.load(f)
@@ -49,10 +47,10 @@ class TranscriberWithAI:
         self.recognizer.energy_threshold = 300
         self.recognizer.dynamic_energy_threshold = True
         self.recognizer.pause_threshold = 0.8
-
+    
     def predict_text(self, text: str):
-        Global
         """Make prediction using the loaded model"""
+        
         try:
             if self.model is None:
                 return {"error": "Model not loaded"}
@@ -62,8 +60,10 @@ class TranscriberWithAI:
             print(self.model.predict([text_array]))
             print(text_array)
             prediction = self.model.predict([text_array])[0]
+             
+            
             #probability = self.model.predict_proba([text_array])[0].max()
-            L.append(text_array)
+            
             return {
                 "class": str(prediction),
                 "scam": float(prediction)
@@ -78,7 +78,6 @@ class TranscriberWithAI:
         
         # Get prediction
         prediction = self.predict_text(text)
-        
         
         for websocket in active_websockets:
             try:
@@ -114,7 +113,7 @@ class TranscriberWithAI:
             
             while self.is_running:
                 try:
-                    audio = self.recognizer.listen(source, phrase_time_limit=20)
+                    audio = self.recognizer.listen(source, phrase_time_limit=5)
                     self.audio_queue.put(audio)
                 except Exception as e:
                     logger.error(f"Recording error: {e}")
@@ -126,16 +125,10 @@ class TranscriberWithAI:
             self.is_running = True
             threading.Thread(target=self.record_audio, daemon=True).start()
             threading.Thread(target=self.process_audio, daemon=True).start()
-            
-            #get input from index_2.html where the id is phn_num for phone number
-       
-            
-
 
     def stop(self):
         """Stop transcription"""
         self.is_running = False
-    
 
 # Create single instance
 transcriber = TranscriberWithAI()
@@ -167,73 +160,3 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.on_event("shutdown")
 async def shutdown_event():
     transcriber.stop()
-
-    
-
- 
-# ... (keep other imports)
-
-# ... (keep existing code until the Redis connection)
-'''
-@app.post("/scam")
-async def scam(data: dict):
-    try:
-        scam_num = data.get('scam')
-        print(f'here it is {scam_num}')
-        if scam_num is None:
-            raise HTTPException(status_code=400, detail="Missing 'scam' value in request")
-        return {"scam": float(scam_num)}
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid scam value format")
-
-@app.post("/update_scam_score/{phone_number}")
-async def update_scam_score(phone_number: str, data: dict):
-    try:
-        # Validate phone number format
-        if not phone_number.startswith("+"):
-            phone_number = f"+{phone_number}"
-            
-        # Get current scam score from request
-        current_score = float(data.get('scam', 0))
-        
-        # Get existing data from Redis
-        existing_data = r.hgetall(phone_number)
-        
-        if existing_data:
-            # Update existing record
-            previous_score = float(existing_data['scam_score'])
-            previous_calls = int(existing_data['calls'])
-            
-            # Calculate new average score
-            new_score = (previous_score * previous_calls + current_score) / (previous_calls + 1)
-            new_calls = previous_calls + 1
-            
-            # Update Redis
-            r.hset(phone_number, mapping={
-                "scam_score": new_score,
-                "calls": new_calls
-            })
-        else:
-            # Create new record
-            r.hset(phone_number, mapping={
-                "scam_score": current_score,
-                "calls": 1
-            })
-            
-        # Return updated data
-        return {
-            "phone_number": phone_number,
-            "current_score": current_score,
-            "average_score": new_score if existing_data else current_score,
-            "total_calls": new_calls if existing_data else 1
-        }
-        
-    except redis.RedisError as e:
-        logger.error(f"Redis error: {e}")
-        raise HTTPException(status_code=500, detail="Database operation failed")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid data format: {str(e)}")
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-'''
